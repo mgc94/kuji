@@ -66,10 +66,56 @@ function render() {
 function showCoupon() {
   $('ticket-label').textContent = `TICKET No. ${String(state.pending + 1).padStart(3, '0')}`;
   $('result').textContent = '?'; $('result-message').textContent = '당신의 행운을 열어보세요';
-  $('modal-title').textContent = '어떤 행운이 기다릴까요?'; $('modal-help').textContent = '아래 쿠폰 열기 버튼을 눌러주세요.';
-  $('open').hidden = false; $('close').hidden = true; $('coupon').classList.remove('revealed');
+  $('modal-title').textContent = '어떤 행운이 기다릴까요?'; $('modal-help').textContent = '쿠폰의 화살표를 잡고 오른쪽 끝까지 밀어주세요.';
+  $('open').hidden = true; $('close').hidden = true; $('coupon').classList.remove('revealed');
+  resetDrag();
   if (!$('draw-dialog').open) $('draw-dialog').showModal();
 }
+// HTML를 바꾸지 않아도 쿠폰 안에 드래그 덮개를 만듭니다.
+const dragCover = document.createElement('div');
+dragCover.className = 'drag-cover';
+dragCover.innerHTML = '<span class="drag-logo">✦ LUCKY TICKET</span><span class="drag-instruction">화살표를 오른쪽으로 밀어주세요</span><span class="drag-line">→ → →</span>';
+const dragHandle = document.createElement('button');
+dragHandle.type = 'button'; dragHandle.className = 'drag-handle';
+dragHandle.textContent = '→';
+dragHandle.setAttribute('aria-label', '오른쪽 끝까지 드래그하여 쿠폰 열기. 키보드에서는 Enter 또는 Space를 누르세요.');
+dragCover.appendChild(dragHandle); $('coupon').appendChild(dragCover);
+let activePointer = null, dragStart = 0, dragDistance = 0;
+function dragLimit() { return Math.max(1, $('coupon').clientWidth - 76); }
+function resetDrag() {
+  activePointer = null; dragDistance = 0;
+  dragCover.hidden = false; dragHandle.disabled = false;
+  dragCover.classList.remove('dragging');
+  dragCover.style.transform = 'translateX(0px)';
+}
+function moveDrag(x) {
+  dragDistance = Math.max(0, Math.min(dragLimit(), x - dragStart));
+  dragCover.style.transform = `translateX(${dragDistance}px)`;
+  if (dragDistance >= dragLimit() * .92) {
+    activePointer = null; revealCoupon();
+  }
+}
+dragHandle.addEventListener('pointerdown', e => {
+  if (state.pending === null || dragCover.hidden || activePointer !== null || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  e.preventDefault(); activePointer = e.pointerId; dragStart = e.clientX;
+  dragCover.classList.add('dragging'); dragHandle.setPointerCapture(e.pointerId);
+});
+dragHandle.addEventListener('pointermove', e => {
+  if (e.pointerId === activePointer) moveDrag(e.clientX);
+});
+function endDrag(e) {
+  if (e.pointerId !== activePointer) return;
+  activePointer = null; dragDistance = 0;
+  dragCover.classList.remove('dragging'); dragCover.style.transform = 'translateX(0px)';
+}
+dragHandle.addEventListener('pointerup', endDrag);
+dragHandle.addEventListener('pointercancel', endDrag);
+dragHandle.addEventListener('lostpointercapture', endDrag);
+dragHandle.addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && state.pending !== null && !dragCover.hidden) {
+    e.preventDefault(); revealCoupon();
+  }
+});
 $('random').onclick = () => {
   const available = state.tickets.map((_, i) => i).filter(i => !state.drawn.includes(i));
   if (available.length && state.pending === null) { selected = available[randomInt(available.length)]; render(); }
@@ -78,14 +124,17 @@ $('start').onclick = () => {
   if (selected === null || state.drawn.includes(selected) || state.pending !== null) return;
   state.pending = selected; state.drawn.push(selected); selected = null; save(); render(); showCoupon();
 };
-$('open').onclick = () => {
+function revealCoupon() {
   if (state.pending === null) return;
   const rank = state.tickets[state.pending];
   $('result').textContent = `${rank}등`; $('result-message').textContent = '축하합니다! 당신의 행운이에요.';
   $('modal-title').textContent = rank === 1 ? '최고의 행운, 1등 당첨!' : `${rank}등에 당첨되었어요!`;
   $('modal-help').textContent = `${state.pending + 1}번 티켓의 결과입니다.`;
   $('coupon').classList.add('revealed'); $('open').hidden = true; $('close').hidden = false;
-};
+  dragCover.hidden = true; dragHandle.disabled = true;
+  $('close').focus();
+}
+$('open').onclick = revealCoupon;
 $('close').onclick = () => { state.pending = null; save(); $('draw-dialog').close(); render(); $('random').focus(); };
 $('draw-dialog').addEventListener('cancel', e => e.preventDefault());
 $('reset').onclick = () => $('reset-dialog').showModal();
